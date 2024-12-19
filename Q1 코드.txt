@@ -1,0 +1,54 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+// Unity 스크립트 (자산 참조 개시 참조 0개)
+public class CarController : MonoBehaviour
+{
+    public WheelCollider FRCollider; // 전방 우측의 휠 콜라이더
+    public WheelCollider FLCollider; // 전방 좌측의 휠 콜라이더
+    public WheelCollider RRCollider; // 후방 우측의 휠 콜라이더
+    public WheelCollider RLCollider; // 후방 좌측의 휠 콜라이더
+
+    private float v; // 수직 방향 입력을 받기 위한 변수
+    private float h; // 수평 방향 입력을 받기 위한 변수
+
+    public float accelGain;
+
+    public float steerGain; // 스티어 신호를 조정하는 변수
+    public float brakeForce; // 정지 신호가 들어올 경우, 차량 제동에 가할 힘
+
+    private float currentBrake; // 현재 제동에 가하는 힘
+
+    // Start is called before the first frame update
+    void Start()
+    {
+    }
+
+    // Unity 메시지 (참조 0개)
+    private void FixedUpdate()
+    {
+        v = Input.GetAxis("Vertical"); // 수직 방향 입력, 크기는 -1 ~ 1
+        h = Input.GetAxis("Horizontal"); // 수평 방향 입력, 크기는 -1 ~ 1
+
+        FRCollider.motorTorque = accelGain * v; // 전방 우측에 입력 전달
+        FLCollider.motorTorque = accelGain * v; // 전방 좌측에 입력 전달
+
+        FRCollider.steerAngle = steerGain * h; // 전방 우측에 조향 값 전달
+        FLCollider.steerAngle = steerGain * h; // 전방 좌측에 조향 값 전달
+
+        if (Input.GetKey(KeyCode.Space)) // 키보드의 Space Bar가 입력으로 들어올 때
+        {
+            currentBrake = brakeForce;
+        }
+        else
+        {
+            currentBrake = 0;
+        }
+
+        FRCollider.brakeTorque = currentBrake;
+        FLCollider.brakeTorque = currentBrake;
+        RRCollider.brakeTorque = currentBrake;
+        RLCollider.brakeTorque = currentBrake;
+    }
+}

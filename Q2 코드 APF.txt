@@ -1,0 +1,45 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class APF : MonoBehaviour
+{
+    private GameObject[] obstacles; // 장애물 오브젝트들
+    public Transform goal; // 목표 지점
+    public float obstacle_gain; // 장애물 반발 계수
+    public float goal_gain; // 목표 지점 끌림 계수
+    public float distance_limit; // 거리 제한
+
+    void Start()
+    {
+        // "Obstacle" 태그가 붙은 모든 오브젝트를 찾아서 배열에 저장
+        obstacles = GameObject.FindGameObjectsWithTag("Obstacle");
+    }
+
+    void Update()
+    {
+        Vector2 cur_pos = new Vector2(transform.position.x, transform.position.z); // 현재 위치
+        Vector2 move_direction = Vector2.zero; // 이동 방향 초기화
+
+        // 장애물에 의한 반발력 계산
+        foreach (GameObject obstacle in obstacles)
+        {
+            Vector2 obstacle_pos = new Vector2(obstacle.transform.position.x, obstacle.transform.position.z);
+            Vector2 distance_obs = obstacle_pos - cur_pos;
+
+            if (distance_obs.magnitude <= distance_limit)
+            {
+                Vector2 rep_force = -obstacle_gain * distance_obs / (distance_obs.magnitude * distance_obs.magnitude);
+                move_direction += rep_force;
+            }
+        }
+
+        // 목표 지점에 의한 끌림력 계산
+        Vector2 distance_goal = new Vector2(goal.position.x, goal.position.z) - cur_pos;
+        Vector2 attr_force = distance_goal.normalized * goal_gain;
+        move_direction += attr_force;
+
+        // 최종 이동 방향 적용
+        transform.position += new Vector3(move_direction.x, 0, move_direction.y) * Time.deltaTime;
+    }
+}
