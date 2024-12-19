@@ -1,0 +1,189 @@
+import cv2
+import numpy as np
+import os
+
+
+# 모드와 타원의 시작점 끝점 설정하기(전역변수)
+modes = 'NULL'  # 현재 모드: NULL, Ellipse, Polygon
+pointlist = []  # 다각형 설정 시 점의 위치를 담을 배열을 선언함.
+startpoint = None  # 타원의 시작점
+endpoint = None  # 타원의 끝점을 설정합니다.
+
+
+# 다각형을 그릴때 내각의 값을 계산하기 위해 함수를 선언 180도 이상 안되게끔 함
+def calculate_ang(point1, point2, point3):
+    ang = np.degrees(np.arctan2(point3[1] - point2[1], point3[0] - point2[0]) - np.arctan2(point1[1] - point2[1], point1[0] - point2[0]))
+    if ang >= 0: #음수 각도가 발생하지 않게 합니다.
+        ang = ang
+    else:
+        ang = ang + 360
+
+    return ang
+
+
+
+# 이미지 값을 불러옴 640,800 사이즈로 재설정
+ROI_image = cv2.imread('input.jpg')
+if ROI_image is None:
+    raise FileNotFoundError("이미지를 찾을 수 없습니다 ㅠㅠ")
+
+ROI_image = cv2.resize(ROI_image, (640, 480)) #사진 사이즈 조정
+
+ori_ROIimage = ROI_image.copy() #그림을 초기화함 전에 어떻게 되어 있던지 초기화를 시킴
+
+
+
+# 현재 모드 텍스트 그리기 함수
+def drawmode_text(ROI_image, mode):
+
+    font = cv2.FONT_HERSHEY_SIMPLEX #폰트 설정
+
+    cv2.putText(ROI_image, f'Mode: {mode}', (10, 30), font, 1, (0, 0, 0), 2, cv2.LINE_AA)
+
+
+
+
+# 마우스 이벤트 모음집
+def mouseuse(event, x, y, flags, param):
+    global startpoint, endpoint, pointlist, ROI_image, modes #실시간 함수 초기화 하기 위함
+
+
+    if modes == 'Ellipse': #타원 모드일 때
+        if event == cv2.EVENT_LBUTTONDOWN: #시작점을 설정
+            startpoint = (x, y)
+
+        elif event == cv2.EVENT_MOUSEMOVE and startpoint is not None:
+            #마루스 이동중이고 시작점이 설정되는 순간 이미지를 계속 하여 복사하고 끝점을 마우스 현재 위치로 설정
+            ROI_image = ori_ROIimage.copy()
+            endpoint = (x, y)
+            #타원을 그린다
+            cv2.ellipse(ROI_image, ((startpoint[0] + endpoint[0])//2, (startpoint[1] + endpoint[1])//2),
+                        (abs(startpoint[0] - endpoint[0])//2, abs(startpoint[1] - endpoint[1])//2), 0, 0, 360, (255, 0, 0), 2)
+                #반시계 방향으로만 돌게함
+            #cv2.ellipse(image, center, axes, angle, startAngle, endAngle, color, thickness)
+
+        #마우스 왼쪽 버튼이 뗴지면 끝점을 설정이 됨 마우스 버튼업!
+        elif event == cv2.EVENT_LBUTTONUP:
+            endpoint = (x, y)
+            mask = np.zeros_like(ROI_image, dtype=np.uint8) #마스크를 설정하여 타원 부분에 흰색으로 채우고 타원영역만 마스크와 결합하는 코드
+            cv2.ellipse(mask, ((startpoint[0] + endpoint[0]) // 2, (startpoint[1] + endpoint[1]) // 2),
+                        (abs(startpoint[0] - endpoint[0]) // 2, abs(startpoint[1] - endpoint[1]) // 2), 0, 0, 360,
+                        (255, 255, 255), -1)
+            result = cv2.bitwise_and(ori_ROIimage, mask)
+            save_ROI_image(result) #결과값을 옆 함수로 전달
+
+
+            startpoint = None #초기화
+            endpoint = None #초기화
+
+
+
+    elif modes == 'Polygon': #다각형 모드일 떄
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # 새 점 추가 전에 내각 확인
+            if len(pointlist) >= 2:
+                ang = calculate_ang(pointlist[-2], pointlist[-1], (x, y))
+                if ang <= 180:  # 180도 이하일 때만 점 추가합니다.
+                    pointlist.append((x, y))
+                else:
+                    # 각도가 180도를 초과하면 점을 추가하지 않음.
+                    return
+            else:
+                pointlist.append((x, y))  # 처음 두 점은 바로 추가
+
+            if len(pointlist) > 1: #점이 두 개 이상일 떄 선을 이어지게끔 그림
+                cv2.line(ROI_image, pointlist[-2], pointlist[-1], (0, 0, 255), 2)
+
+                #cv2.polylines(image, pts, isClosed, color, thickness)
+
+            if len(pointlist) > 2 and np.linalg.norm(np.array(pointlist[-1]) - np.array(pointlist[0])) < 20:
+                # ㄴ20픽셀 이내일때 다각형을 닫아버리는 코드
+                cv2.line(ROI_image, pointlist[-1], pointlist[0], (0, 0, 255), 2)
+                #만들어진 다각형 하얗게 채움
+                mask = np.zeros_like(ROI_image, dtype=np.uint8)
+
+                cv2.fillPoly(mask, [np.array(pointlist)], (255, 255, 255))
+                 #비트와이스 연산으로 오려서 전달ㄱ
+                result = cv2.bitwise_and(ori_ROIimage, mask)
+
+                save_ROI_image(result)
+
+                pointlist = []
+
+
+
+
+
+#아래는 jpg 파일을 저장하는 코드이다 경로와 상관없이 저장 할 수 있도록 코딩을 하였다.
+def save_ROI_image(ROI_image):
+    picturename = 'hsh'
+    cnt = 1 #다일을 저장할 떄 이름을 지정합니다.
+    while True:
+        filename = f"{picturename}_{cnt:04d}.jpg" #파일을 저장할 떄 이름을 지정합니다.
+        if not os.path.exists(filename): #같은 파일이 있는지 확인 아니면 해당이름으로 저장합니다.
+            cv2.imwrite(filename, ROI_image)
+            break #아니면 루프 바로 종료
+
+        cnt += 1 #다음 0001 0002 이런식으로 파일 저장되게 끔 숫자를 높힘
+
+
+
+
+
+# 모드 변경하는 코드와 esc의 역활 정의
+def modes_keys():
+    global modes, ROI_image, pointlist, startpoint, endpoint, ori_ROIimage
+    #무한루프로 계속 사진을 오릴 수 있게함
+    while True:
+        key = cv2.waitKey(10) & 0xFF #10ms 동안 입력받는 주기를 설정했음
+        if key == 27:  # ESC 키 누르면 꺼짐
+            break
+
+        elif key == ord('1'): #1 누르면~~~
+            if modes == 'Ellipse':
+                modes = 'NULL' # 타원일 때 모드를 널로 변경
+                ROI_image = ori_ROIimage.copy() #모든 잔여 타원을 없앰
+                startpoint, endpoint = None, None #타원을 초기화
+
+            else:
+                modes = 'Ellipse'
+                pointlist = []# 위의 경우가 아니면 타원을 그리기위한 리스트 초기화
+
+                ROI_image = ori_ROIimage.copy()  # 이미지 초기화
+                startpoint, endpoint = None, None  # 타원을 초기화
+
+        elif key == ord('2'):  #위와 동일한 방식으로 작동
+
+            if modes == 'Polygon':
+                modes = 'NULL'
+                ROI_image = ori_ROIimage.copy()
+                pointlist = []
+
+
+
+            else:
+                modes = 'Polygon'
+                startpoint, endpoint = None, None
+                ROI_image = ori_ROIimage.copy()  # 이미지 초기화
+                pointlist = []  # 다각형을 그리기 위한 리스트 초기화
+###########################################################################################
+
+        ROI_imagemode = ROI_image.copy() #상태변화를 변수에 넣음
+
+        drawmode_text(ROI_imagemode, modes) #모드 표현하는 텍스트를 결정하는 함수를 호출함
+
+        cv2.imshow('ROI_image', ROI_imagemode) # 넣은 변수를 업데이트 되면 바로바로 표시하기
+
+
+# 메인 함수
+def main():
+    global ROI_image
+
+    cv2.namedWindow('ROI_image')#윈도우 창 이름
+    cv2.setMouseCallback('ROI_image', mouseuse) #mouseuse 의 기능을 윈도우에 넣음
+
+    modes_keys()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
